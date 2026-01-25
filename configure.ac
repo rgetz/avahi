@@ -306,6 +306,68 @@ test_gcc_flag() {
     return $ret
 }
 
+# coverage
+
+AC_ARG_ENABLE([coverage],
+  AS_HELP_STRING([--enable-coverage],
+    [Enable code coverage instrumentation]),
+  [enable_coverage=$enableval],
+  [enable_coverage=no]
+)
+AS_IF([test "x$enable_coverage" = "xyes"],
+[
+  # Ensure compiler supports coverage
+  AS_IF([test "x$GCC" != "xyes" && ! $CC --version 2>/dev/null | grep -qi clang],
+    [AC_MSG_ERROR([--enable-coverage requires GCC or Clang])])
+
+  AC_MSG_NOTICE([Enabling code coverage])
+
+  # Disable optimizations so coverage works properly
+  CFLAGS=`echo "$CFLAGS" | sed -e 's/-O[[0-9]]*//' -e 's/[[[:space:]]][[[:space:]]]*/ /g'`
+  CFLAGS="-O0 $CFLAGS"
+
+  # Flags
+  for flag in -fprofile-arcs -ftest-coverage; do
+    AC_MSG_CHECKING([whether $CC accepts $flag])
+    if test_gcc_flag $flag; then
+      CFLAGS="$CFLAGS $flag"
+      AC_MSG_RESULT([yes])
+    else
+      AC_MSG_RESULT([no])
+      AC_MSG_ERROR([Coverage flag $flag not supported])
+    fi
+  done
+
+  LDFLAGS="$LDFLAGS -fprofile-arcs"
+
+  # Detect gcov tool, assume gcc for a second...
+  gcov_tool=gcov
+  AS_IF([$CC --version 2>/dev/null | grep -qi clang], [
+    for tool in llvm-cov llvm-cov-20 llvm-cov-19 llvm-cov-18 llvm-cov-17 llvm-cov-16; do
+      if command -v "$tool" >/dev/null 2>&1; then
+        LLVM_COV="$tool"
+        break
+      fi
+    done
+    AS_IF([test -z "$LLVM_COV"], [
+      AC_MSG_ERROR([clang detected but no llvm-cov found])
+    ])
+    AC_SUBST([LLVM_COV])
+    AC_CONFIG_FILES([common/llvm-gcov-wrapper.sh],
+      [chmod +x common/llvm-gcov-wrapper.sh])
+    abs_dir=`cd "$ac_abs_top_builddir" && pwd`
+    gcov_tool="$abs_dir/common/llvm-gcov-wrapper.sh"
+    AC_SUBST([gcov_tool])
+  ])
+
+  GCOV_TOOL="$gcov_tool"
+  AC_MSG_NOTICE([Using gcov tool: $GCOV_TOOL])
+  AC_SUBST([GCOV_TOOL])
+
+])
+AC_SUBST([enable_coverage])
+AM_CONDITIONAL([HAVE_COVERAGE], [test "x$enable_coverage" = "xyes"])
+
 # If using GCC specify some additional parameters
 if test "x$GCC" = "xyes" ; then
 
@@ -1222,6 +1284,7 @@ echo "
     Enable chroot():                           ${enable_chroot}
     Enable Linux inotify:                      ${have_inotify}
     Enable stack-smashing protection:          ${enable_ssp}
+    Enable code coverage:                      ${enable_coverage}
     systemd unit directory:                    ${with_systemdsystemunitdir}
 "
 

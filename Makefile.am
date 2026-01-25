@@ -241,6 +241,47 @@ pkgconfig_DATA += avahi-libevent.pc
 CLEANFILES += avahi-libevent.pc
 endif
 
+if HAVE_COVERAGE
+TOPDIR := $(abspath $(top_builddir))
+COVERAGE_DIR := $(TOPDIR)/avahi-coverage
+COVERAGE_INFO := $(COVERAGE_DIR)/coverage.info
+COVERAGE_INFO_F := $(COVERAGE_DIR)/coverage.filtered.info
+
+.PHONY: coverage
+
+coverage:
+	@if ! find $(TOPDIR) -name '*.gcda' | grep -q . ; then \
+	    echo "No coverage data found! You need to run something first, try:"; \
+	    echo "  make check"; \
+	    exit 1; \
+	fi
+	@mkdir -p $(COVERAGE_DIR)
+	@echo "Generating code coverage report from $(TOPDIR)"
+	cd $(TOPDIR) && \
+	lcov --gcov-tool "$(GCOV_TOOL)" --capture --directory $(TOPDIR) --output-file $(COVERAGE_INFO) --branch-coverage --ignore-errors inconsistent && \
+	lcov --gcov-tool "$(GCOV_TOOL)" --omit-lines '^\s*assert\(' --remove $(COVERAGE_INFO) '/usr/*' '*-test.c' --output-file $(COVERAGE_INFO_F) --branch-coverage --ignore-errors inconsistent --ignore-errors unused && \
+	genhtml $(COVERAGE_INFO_F) --output-directory $(COVERAGE_DIR) --branch-coverage --ignore-errors inconsistent
+	@echo "Coverage report generated in $(COVERAGE_DIR)/index.html"
+
+.PHONY: coverage-clean
+
+coverage-clean:
+	@test -n "$(COVERAGE_DIR)" || { echo "COVERAGE_DIR is empty! Aborting."; exit 1; }
+	@test -n "$(TOPDIR)" || { echo "top_builddir empty, aborting"; exit 1; }
+	@echo "Cleaning coverage data..."
+	@# Delete only coverage data files
+	find $(TOPDIR) -name '*.gcda' | xargs -r rm -f
+	@# Remove HTML report files only
+	find $(COVERAGE_DIR) -type f \( -name '*.html' -o -name '*.png' -o -name '*.info' \) | xargs -r rm -f
+	@# Remove empty directories inside the report dir
+	find $(COVERAGE_DIR) -type d -empty | xargs -r rm -rf
+	@echo "Coverage data cleaned."
+
+distclean-local:
+	@$(MAKE) coverage-clean || true
+
+endif
+
 CLEANFILES += avahi.devhelp
 
 avahi.devhelp: doxygen-run
