@@ -329,6 +329,8 @@ AvahiStringList *avahi_string_list_add_many_va(AvahiStringList *r, va_list va) {
     AvahiStringList *n;
     const char *txt;
 
+    assert(va);
+
     while ((txt = va_arg(va, const char*))) {
         n = avahi_string_list_add(r, txt);
         if (!n) {
@@ -400,6 +402,7 @@ AvahiStringList *avahi_string_list_add_vprintf(AvahiStringList *l, const char *f
     AvahiStringList *r;
 
     assert(format);
+    assert(va);
 
     if (!(r = avahi_malloc(sizeof(AvahiStringList) + len)))
         return NULL;
