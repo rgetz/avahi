@@ -306,6 +306,79 @@ test_gcc_flag() {
     return $ret
 }
 
+# sanitizer
+
+AC_ARG_WITH([sanitizer],
+  AS_HELP_STRING([--with-sanitizer=TYPE],
+                 [Enable compiler sanitizer: none, address, undefined, address,undefined, memory, leak, thread]),
+  [sanitizer_type=$withval],
+  [sanitizer_type=none])
+
+SANITIZER_CFLAGS=""
+SANITIZER_LDFLAGS=""
+
+AS_IF([test "x$sanitizer_type" != "xnone"], [
+  case "$sanitizer_type" in
+    none|address|undefined|address,undefined|memory|leak|thread) ;;
+    *)
+      AC_MSG_ERROR([Unknown sanitizer: $sanitizer_type])
+      ;;
+  esac
+
+  case ",$sanitizer_type," in
+    *,undefined,*)
+      have_ubsan=yes
+      ;;
+    *)
+      have_ubsan=no
+      ;;
+  esac
+
+  # Use the string literally as -fsanitize=...
+  SANITIZER_CFLAGS="-fsanitize=$sanitizer_type"
+  SANITIZER_LDFLAGS="-fsanitize=$sanitizer_type"
+
+  # Save original flags
+  save_CFLAGS="$CFLAGS"
+  save_LDFLAGS="$LDFLAGS"
+
+  CFLAGS="$CFLAGS $SANITIZER_CFLAGS"
+  LDFLAGS="$LDFLAGS $SANITIZER_LDFLAGS"
+
+  # Test compiler support
+  AC_MSG_CHECKING([whether $CC supports -fsanitize=$sanitizer_type])
+  AC_LINK_IFELSE(
+    [AC_LANG_PROGRAM([], [])],
+    [AC_MSG_RESULT([yes])],
+    [AC_MSG_ERROR([no])]
+  )
+  SANITIZER_CFLAGS="$SANITIZER_CFLAGS -fsanitize-recover=memory"
+  AS_IF([test "x$have_ubsan" = "xyes"], [
+    for flag in -fno-sanitize-recover=undefined -fno-sanitize-recover; do
+      AC_MSG_CHECKING([whether $CC accepts $flag])
+      if test_gcc_flag $flag ; then
+        SANITIZER_CFLAGS="$SANITIZER_CFLAGS $flag"
+        AC_MSG_RESULT([yes])
+        break
+      else
+        AC_MSG_RESULT([no])
+      fi
+    done
+  ])
+  AC_MSG_CHECKING([whether $CC accepts -fno-omit-frame-pointer])
+  if test_gcc_flag -fno-omit-frame-pointer ; then
+    SANITIZER_CFLAGS="$SANITIZER_CFLAGS -fno-omit-frame-pointer"
+    AC_MSG_RESULT([yes])
+  else
+    AC_MSG_RESULT([no])
+  fi
+
+  # Restore user flags
+  CFLAGS="$save_CFLAGS"
+  LDFLAGS="$save_LDFLAGS"
+])
+
+
 # coverage
 
 AC_ARG_ENABLE([coverage],
@@ -404,6 +477,10 @@ if test "x$GCC" = "xyes" ; then
            AC_MSG_RESULT([no])
         fi
     done
+    if test "x$sanitizer_type" != "xnone"; then
+        CFLAGS="$CFLAGS $SANITIZER_CFLAGS"
+        LDFLAGS="$LDFLAGS $SANITIZER_LDFLAGS"
+    fi
 fi
 
 # Checks for header files.
@@ -1285,6 +1362,7 @@ echo "
     Enable Linux inotify:                      ${have_inotify}
     Enable stack-smashing protection:          ${enable_ssp}
     Enable code coverage:                      ${enable_coverage}
+    Enable sanitizer:                          ${sanitizer_type}
     systemd unit directory:                    ${with_systemdsystemunitdir}
 "
 
